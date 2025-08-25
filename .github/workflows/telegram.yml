@@ -2,9 +2,10 @@ name: Daily Telegram post
 
 on:
   schedule:
-    # GitHub Actions по UTC; Москва 21:23 → 18:23 UTC
+    # GitHub Actions по UTC
+    # Москва 21:23 (UTC+3) → 18:23 UTC
     - cron: "23 18 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch: {}  # возможность запустить вручную
 
 jobs:
   post_and_delete:
@@ -22,13 +23,20 @@ jobs:
           POST_TEXT: ${{ secrets.POST_TEXT }}
           DELETE_AFTER_SECONDS: ${{ secrets.DELETE_AFTER_SECONDS }}
         run: |
+          # удаляем переносы строк из переменных
+          BOT_TOKEN=$(printf "%s" "$BOT_TOKEN" | tr -d '\r\n')
+          CHANNEL_ID=$(printf "%s" "$CHANNEL_ID" | tr -d '\r\n')
+          POST_TEXT=$(printf "%s" "$POST_TEXT" | tr -d '\r\n')
+          DELETE_AFTER_SECONDS=$(printf "%s" "$DELETE_AFTER_SECONDS" | tr -d '\r\n')
+
           test -n "$BOT_TOKEN" || (echo "::error::BOT_TOKEN is empty" && exit 2)
           test -n "$CHANNEL_ID" || (echo "::error::CHANNEL_ID is empty" && exit 2)
           test -n "$POST_TEXT"  || (echo "::error::POST_TEXT is empty" && exit 2)
-          if [ -z "$DELETE_AFTER_SECONDS" ]; then
-            echo "DELETE_AFTER_SECONDS not set, default 60"
-          fi
-          echo "CHANNEL_ID=$CHANNEL_ID"  # ок печатать; токен печатать нельзя
+          echo "Secrets look OK (lengths):"
+          echo "BOT_TOKEN length: $(echo -n $BOT_TOKEN | wc -c)"
+          echo "CHANNEL_ID length: $(echo -n $CHANNEL_ID | wc -c)"
+          echo "POST_TEXT length: $(echo -n $POST_TEXT | wc -c)"
+          echo "DELETE_AFTER_SECONDS: ${DELETE_AFTER_SECONDS:-60}"
 
       - name: Send message (silent)
         id: send
@@ -37,6 +45,10 @@ jobs:
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           POST_TEXT: ${{ secrets.POST_TEXT }}
         run: |
+          BOT_TOKEN=$(printf "%s" "$BOT_TOKEN" | tr -d '\r\n')
+          CHANNEL_ID=$(printf "%s" "$CHANNEL_ID" | tr -d '\r\n')
+          POST_TEXT=$(printf "%s" "$POST_TEXT" | tr -d '\r\n')
+
           JSON=$(jq -n \
             --arg chat_id  "$CHANNEL_ID" \
             --arg text     "$POST_TEXT" \
@@ -45,13 +57,12 @@ jobs:
             '{chat_id:$chat_id, text:$text, disable_web_page_preview:$disable_web_page_preview, disable_notification:$disable_notification}')
 
           echo "Payload: $JSON"
+
           RESP=$(curl -sS --fail-with-body -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" -d "$JSON") || {
-              echo "::error::curl failed"
-              exit 3
-            }
-          echo "Response: $RESP"
+              echo "::error::curl failed"; exit 3; }
 
+          echo "Response: $RESP"
           OK=$(echo "$RESP" | jq -r '.ok')
           MSG_ID=$(echo "$RESP" | jq -r '.result.message_id // empty')
           DESC=$(echo "$RESP" | jq -r '.description // empty')
@@ -65,7 +76,8 @@ jobs:
         env:
           DELETE_AFTER_SECONDS: ${{ secrets.DELETE_AFTER_SECONDS }}
         run: |
-          SECS=${DELETE_AFTER_SECONDS:-60}
+          SECS=$(printf "%s" "$DELETE_AFTER_SECONDS" | tr -d '\r\n')
+          SECS=${SECS:-60}
           echo "Sleeping ${SECS}s"
           sleep "$SECS"
 
@@ -75,6 +87,10 @@ jobs:
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           MSG_ID: ${{ steps.send.outputs.message_id }}
         run: |
+          BOT_TOKEN=$(printf "%s" "$BOT_TOKEN" | tr -d '\r\n')
+          CHANNEL_ID=$(printf "%s" "$CHANNEL_ID" | tr -d '\r\n')
+          MSG_ID=$(printf "%s" "$MSG_ID" | tr -d '\r\n')
+
           echo "Deleting message_id=${MSG_ID}"
           RESP=$(curl -sS --fail-with-body -X POST "https://api.telegram.org/bot${BOT_TOKEN}/deleteMessage" \
             -H "Content-Type: application/json" \
