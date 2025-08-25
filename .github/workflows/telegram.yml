@@ -2,10 +2,10 @@ name: Daily Telegram post
 
 on:
   schedule:
-    # GitHub Actions запускается по UTC!
+    # GitHub Actions работает по UTC
     # Москва 21:23 (UTC+3) → 18:23 UTC
     - cron: "23 18 * * *"
-  workflow_dispatch: {}  # ручной запуск
+  workflow_dispatch: {}  # возможность запустить вручную
 
 jobs:
   post_and_delete:
@@ -21,7 +21,7 @@ jobs:
           sudo apt-get update -y && sudo apt-get install -y jq
           RESP=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
-            -d "{\"chat_id\":\"${CHANNEL_ID}\",\"text\":\"${POST_TEXT}\",\"disable_web_page_preview\":false}")
+            -d "{\"chat_id\":\"${CHANNEL_ID}\",\"text\":\"${POST_TEXT}\",\"disable_web_page_preview\":false,\"disable_notification\":true}")
           echo "Response: $RESP"
           MSG_ID=$(echo "$RESP" | jq -r '.result.message_id')
           if [ "$MSG_ID" = "null" ] || [ -z "$MSG_ID" ]; then echo "Failed"; exit 1; fi
@@ -31,6 +31,7 @@ jobs:
         run: |
           SECS=${{ secrets.DELETE_AFTER_SECONDS }}
           if [ -z "$SECS" ]; then SECS=60; fi
+          echo "Sleeping ${SECS}s"
           sleep "$SECS"
 
       - name: Delete message
